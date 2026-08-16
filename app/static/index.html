@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Organizador de PDFs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="auth-view" class="auth-wrap hidden">
+    <div class="auth-card">
+      <h1 class="brand">Organizador de PDFs</h1>
+      <p class="subtitle">Separe páginas de listas de presença por assunto</p>
+      <div class="tabs">
+        <button id="tab-login" class="tab active">Entrar</button>
+        <button id="tab-register" class="tab">Cadastrar</button>
+      </div>
+      <form id="auth-form" autocomplete="off">
+        <div id="field-nome" class="field hidden">
+          <label for="nome">Nome</label>
+          <input type="text" id="nome" placeholder="Seu nome">
+        </div>
+        <div class="field">
+          <label for="email">E-mail</label>
+          <input type="email" id="email" placeholder="voce@email.com" required>
+        </div>
+        <div class="field">
+          <label for="senha">Senha</label>
+          <input type="password" id="senha" placeholder="Mínimo 6 caracteres" required>
+        </div>
+        <p id="auth-error" class="error hidden"></p>
+        <button type="submit" id="auth-submit" class="btn primary block">Entrar</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="app-view" class="hidden">
+    <header class="topbar">
+      <div class="brand small">Organizador de PDFs</div>
+      <nav class="nav">
+        <button class="nav-btn active" data-view="documents">Documentos</button>
+        <button class="nav-btn" data-view="subjects">Assuntos</button>
+      </nav>
+      <div class="userbox">
+        <span id="user-name"></span>
+        <button id="logout" class="btn ghost">Sair</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section id="view-documents" class="view">
+        <div class="card upload-card">
+          <h2>Enviar PDFs</h2>
+          <p class="muted">Você pode enviar vários arquivos de uma vez (máx. 50 MB cada).</p>
+          <input type="file" id="file-input" accept="application/pdf,.pdf" multiple>
+          <button id="btn-upload" class="btn primary">Enviar arquivos</button>
+          <p id="upload-msg" class="error hidden"></p>
+        </div>
+
+        <div class="card">
+          <h2>Meus documentos</h2>
+          <p id="docs-empty" class="muted hidden">Nenhum documento enviado ainda.</p>
+          <table class="table" id="docs-table" hidden>
+            <thead>
+              <tr><th>Documento</th><th>Páginas</th><th>Enviado em</th><th>Ações</th></tr>
+            </thead>
+            <tbody id="docs-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-subjects" class="view hidden">
+        <div class="card">
+          <h2>Assuntos e palavras-chave</h2>
+          <p class="muted">Cada assunto representa um critério. As palavras-chave identificam as páginas desse assunto no texto do PDF.</p>
+          <form id="subject-form" class="subject-form">
+            <div class="field">
+              <label for="subject-name">Nome do assunto</label>
+              <input type="text" id="subject-name" placeholder="Ex.: Matemática" required>
+            </div>
+            <div class="field">
+              <label for="subject-keywords">Palavras-chave (separadas por vírgula)</label>
+              <input type="text" id="subject-keywords" placeholder="Ex.: matemática, prova, exercício, avaliação">
+            </div>
+            <button type="submit" class="btn primary">Adicionar assunto</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Meus assuntos</h2>
+          <p id="subjects-empty" class="muted hidden">Nenhum assunto criado.</p>
+          <div id="subjects-list"></div>
+        </div>
+      </section>
+
+      <section id="view-analyze" class="view hidden">
+        <div class="card">
+          <div class="analyze-head">
+            <div>
+              <h2 id="analyze-title">Análise de páginas</h2>
+              <p id="analyze-doc-info" class="muted"></p>
+            </div>
+            <div class="analyze-actions">
+              <button id="btn-analyze" class="btn primary">Analisar páginas</button>
+              <button id="btn-save" class="btn">Salvar seleção</button>
+              <button id="btn-extract" class="btn accent">Extrair páginas confirmadas</button>
+            </div>
+          </div>
+          <p id="analyze-msg" class="error hidden"></p>
+          <div id="results-box" class="hidden">
+            <h3>Arquivos gerados</h3>
+            <ul id="results-list"></ul>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th>Pág.</th><th>Trecho do texto</th><th>Assunto selecionado</th><th>Correspondências</th></tr>
+              </thead>
+              <tbody id="analysis-body"></tbody>
+            </table>
+          </div>
+          <p id="analysis-empty" class="muted hidden">Clique em “Analisar páginas” para identificar os assuntos de cada página.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

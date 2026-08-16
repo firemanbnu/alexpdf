@@ -1,0 +1,11 @@
+services:
+  pdf-organizer:
+    build: .
+    container_name: pdf-organizer
+    ports:
+      - "8000:8000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-troque-este-segredo}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
