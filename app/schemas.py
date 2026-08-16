@@ -28,30 +28,6 @@ class UserOut(BaseModel):
     criado_em: datetime
 
 
-# ---------------------------------------------------------------- subjects
-class KeywordOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    palavra: str
-
-
-class SubjectCreate(BaseModel):
-    nome: str = Field(min_length=1, max_length=200)
-    keywords: List[str] = Field(default_factory=list)
-
-
-class SubjectUpdate(BaseModel):
-    nome: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    keywords: Optional[List[str]] = None
-
-
-class SubjectOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    nome: str
-    keywords: List[KeywordOut]
-
-
 # ---------------------------------------------------------------- documents
 class DocumentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -61,34 +37,27 @@ class DocumentOut(BaseModel):
     criado_em: datetime
 
 
-class DocumentDetail(DocumentOut):
-    paginas_texto: List[str] = []
-    matches: List["PageMatchOut"] = []
-
-
-class PageMatchOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    subject_id: int
-    num_pagina: int
-    score: float
-    confirmada: bool
-
-
 # ---------------------------------------------------------------- extraction
+class PaginaInfo(BaseModel):
+    num_pagina: int
+    data_sessao: Optional[str] = None
+    hora_inicio: Optional[str] = None
+    confirmada: bool = True
+
+
+class PessoaResult(BaseModel):
+    person_id: int
+    nome: str
+    paginas: List[PaginaInfo]
+
+
 class AnalyzeResult(BaseModel):
     document_id: int
-    paginas: List["PageAnalysis"]
-
-
-class PageAnalysis(BaseModel):
-    num_pagina: int
-    texto_preview: str
-    matches: List["PageMatchOut"]
-    melhor_subject_id: Optional[int] = None
+    pessoas: List[PessoaResult]
 
 
 class ConfirmItem(BaseModel):
-    subject_id: int
+    person_id: int
     num_pagina: int
     confirmada: bool
 
@@ -100,8 +69,3 @@ class ConfirmRequest(BaseModel):
 class ExtractResult(BaseModel):
     arquivos: List[str]
     zip_url: str
-
-
-DocumentDetail.model_rebuild()
-AnalyzeResult.model_rebuild()
-PageAnalysis.model_rebuild()

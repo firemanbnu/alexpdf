@@ -3,8 +3,7 @@
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
   let token = localStorage.getItem("token") || null;
-  let subjectsMap = {}; // id -> {id, nome, keywords}
-  let currentDoc = null;
+  let currentDoc = null; // { id, nome, num_paginas }
   let analysis = null; // resultado da análise exibido
 
   const authView = $("#auth-view");
@@ -51,7 +50,7 @@
     return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  // ------------------------------------------------------------ auth
+  // ------------------------------------------------------------ auth / nav
   function showView(kind) {
     if (kind === "auth") {
       authView.classList.remove("hidden");
@@ -71,6 +70,8 @@
   function logout() {
     token = null;
     localStorage.removeItem("token");
+    currentDoc = null;
+    analysis = null;
     showView("auth");
   }
 
@@ -120,41 +121,8 @@
     showView("app");
     const me = await api("/auth/me").catch(() => null);
     $("#user-name").textContent = me ? me.nome : "";
-    await loadSubjects();
     await loadDocuments();
     setTab("documents");
-  }
-
-  // ------------------------------------------------------------ subjects
-  async function loadSubjects() {
-    const list = await api("/subjects");
-    subjectsMap = {};
-    list.forEach((s) => (subjectsMap[s.id] = s));
-    renderSubjects();
-  }
-
-  function renderSubjects() {
-    const wrap = $("#subjects-list");
-    const empty = $("#subjects-empty");
-    const list = Object.values(subjectsMap);
-    empty.classList.toggle("hidden", list.length > 0);
-    wrap.innerHTML = list
-      .map(
-        (s) => `
-        <div class="subject-item" data-id="${s.id}">
-          <div>
-            <h4>${esc(s.nome)}</h4>
-            <div class="chips">${s.keywords.map((k) => `<span class="chip">${esc(k.palavra)}</span>`).join("") || '<span class="muted">sem palavras-chave</span>'}</div>
-          </div>
-          <div class="subject-actions">
-            <input type="text" class="edit-name" placeholder="Novo nome" value="${esc(s.nome)}">
-            <input type="text" class="edit-kw" placeholder="Novas palavras-chave" value="${esc(s.keywords.map((k) => k.palavra).join(", "))}">
-            <button class="btn save">Salvar</button>
-            <button class="btn danger del">Excluir</button>
-          </div>
-        </div>`
-      )
-      .join("");
   }
 
   // ------------------------------------------------------------ documents
@@ -203,15 +171,12 @@
 
   // ------------------------------------------------------------ analysis
   async function openAnalysis(docId) {
-    currentDoc = { id: docId };
     const list = await api("/documents");
     const doc = list.find((d) => d.id === docId);
     if (!doc) return;
-    currentDoc.nome = doc.nome_original;
-    $("#analyze-title").textContent = "Análise de páginas";
+    currentDoc = { id: doc.id, nome: doc.nome_original, num_paginas: doc.num_paginas };
+    $("#analyze-title").textContent = "Separação por nome";
     $("#analyze-doc-info").textContent = `${doc.nome_original} — ${doc.num_paginas} páginas`;
-    $("#analysis-body").innerHTML = "";
-    $("#analysis-empty").classList.remove("hidden");
     $("#results-box").classList.add("hidden");
     $("#analyze-msg").classList.add("hidden");
     setTab("analyze");
@@ -220,73 +185,85 @@
 
   async function runAnalysis(showError = true) {
     if (!currentDoc) return;
+    const loading = $("#analyze-loading");
+    const empty = $("#analysis-empty");
+    const msg = $("#analyze-msg");
+    loading.classList.remove("hidden");
+    empty.classList.add("hidden");
+    msg.classList.add("hidden");
+    $("#persons-list").innerHTML = "";
     try {
       analysis = await api(`/extract/analyze/${currentDoc.id}`, { method: "POST" });
       renderAnalysis();
-      toast("Análise concluída. Revise a seleção e extraia.");
+      toast("Análise concluída. Desmarque páginas indesejadas e extraia.");
     } catch (err) {
       if (showError) toast(err.message, true);
       else {
-        $("#analyze-msg").textContent = err.message;
-        $("#analyze-msg").classList.remove("hidden");
+        msg.textContent = err.message;
+        msg.classList.remove("hidden");
       }
+    } finally {
+      loading.classList.add("hidden");
     }
   }
 
   function renderAnalysis() {
-    $("#analysis-empty").classList.add("hidden");
-    const body = $("#analysis-body");
-    const subjOptions = Object.values(subjectsMap).map((s) => `<option value="${s.id}">${esc(s.nome)}</option>`).join("");
-    body.innerHTML = analysis.paginas
+    const wrap = $("#persons-list");
+    const empty = $("#analysis-empty");
+    empty.classList.toggle("hidden", (analysis.pessoas || []).length > 0);
+
+    wrap.innerHTML = (analysis.pessoas || [])
       .map((p) => {
-        const confirmed = p.matches.find((m) => m.confirmada);
-        const selectedId = confirmed ? confirmed.subject_id : "";
-        const scores = p.matches
+        const total = p.paginas.length;
+        const confirmadas = p.paginas.filter((pg) => pg.confirmada).length;
+        const datas = p.paginas.map((pg) => pg.data_sessao).filter(Boolean);
+        const periodo = datas.length
+          ? `${datas[0]} a ${datas[datas.length - 1]}`
+          : "—";
+        const rows = p.paginas
           .map(
-            (m) =>
-              `<span><strong>${esc(subjectsMap[m.subject_id]?.nome || "?")}:</strong> ${m.score}${m.confirmada ? " ✓" : ""}</span>`
+            (pg) => `
+            <tr>
+              <td><input type="checkbox" class="page-check" data-page="${pg.num_pagina}" ${pg.confirmada ? "checked" : ""}></td>
+              <td><strong>${pg.num_pagina}</strong></td>
+              <td>${esc(pg.data_sessao || "—")}</td>
+              <td>${esc(pg.hora_inicio || "—")}</td>
+            </tr>`
           )
-          .join("") || '<span>—</span>';
+          .join("");
         return `
-          <tr data-page="${p.num_pagina}">
-            <td><strong>${p.num_pagina}</strong></td>
-            <td class="preview">${esc(p.texto_preview) || "(sem texto)"}</td>
-            <td>
-              <select class="page-subject">
-                <option value="">— Nenhum —</option>
-                ${subjOptions}
-              </select>
-            </td>
-            <td><div class="score-list">${scores}</div></td>
-          </tr>`;
+          <details class="person" data-person="${p.person_id}" ${confirmadas === total ? "" : "open"}>
+            <summary>
+              <span class="person-name">${esc(p.nome)}</span>
+              <span class="person-meta">${confirmadas}/${total} páginas · ${esc(periodo)}</span>
+            </summary>
+            <table class="table pages">
+              <thead><tr><th>Incluir</th><th>Pág.</th><th>Data</th><th>Início</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </details>`;
       })
       .join("");
-    $$("#analysis-body select.page-subject").forEach((sel, i) => {
-      const confirmed = analysis.paginas[i].matches.find((m) => m.confirmada);
-      if (confirmed) sel.value = String(confirmed.subject_id);
-      sel.addEventListener("change", () => markPage(sel, i));
-    });
-  }
 
-  function markPage(sel, idx) {
-    const page = analysis.paginas[idx];
-    page.matches.forEach((m) => {
-      m.confirmada = String(m.subject_id) === sel.value;
-    });
-    renderAnalysis();
+    if (!(analysis.pessoas || []).length) {
+      empty.textContent =
+        "Nenhuma assinatura APOC com nome foi encontrada neste documento. Verifique se o arquivo tem o campo APOC com nome à esquerda.";
+      empty.classList.remove("hidden");
+    }
   }
 
   async function saveSelection() {
-    if (!currentDoc) return;
+    if (!currentDoc || !analysis) return;
     const items = [];
-    $$("#analysis-body select.page-subject").forEach((sel, i) => {
-      if (sel.value) {
+    $$("#persons-list details.person").forEach((det) => {
+      const personId = Number(det.dataset.person);
+      det.querySelectorAll(".page-check").forEach((cb) => {
         items.push({
-          subject_id: Number(sel.value),
-          num_pagina: analysis.paginas[i].num_pagina,
-          confirmada: true,
+          person_id: personId,
+          num_pagina: Number(cb.dataset.page),
+          confirmada: cb.checked,
         });
-      }
+      });
     });
     try {
       analysis = await api(`/extract/confirm/${currentDoc.id}`, {
@@ -294,7 +271,6 @@
         body: JSON.stringify({ items }),
       });
       renderAnalysis();
-      toast("Seleção salva");
     } catch (err) {
       toast(err.message, true);
     }
@@ -308,7 +284,7 @@
       $("#results-list").innerHTML = res.arquivos
         .map(
           (f) =>
-            `<li>${f.endsWith(".zip") ? "" : ""}<a href="/extract/download/${encodeURIComponent(f)}" download>${esc(f)}</a>${f.endsWith(".zip") ? " (todos em ZIP)" : ""}</li>`
+            `<li><a href="/extract/download/${encodeURIComponent(f)}" download>${esc(f)}</a>${f.endsWith(".zip") ? " (todos em ZIP)" : ""}</li>`
         )
         .join("");
       box.classList.remove("hidden");
@@ -323,48 +299,6 @@
   $("#tab-register").addEventListener("click", () => goAuthMode("register"));
   $("#auth-form").addEventListener("submit", submitAuth);
   $("#logout").addEventListener("click", logout);
-
-  $("#subject-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const nome = $("#subject-name").value.trim();
-    const keywords = $("#subject-keywords").value.split(",").map((s) => s.trim()).filter(Boolean);
-    if (!nome) return;
-    try {
-      await api("/subjects", { method: "POST", body: JSON.stringify({ nome, keywords }) });
-      $("#subject-name").value = "";
-      $("#subject-keywords").value = "";
-      await loadSubjects();
-      toast("Assunto adicionado");
-    } catch (err) {
-      toast(err.message, true);
-    }
-  });
-
-  $("#subjects-list").addEventListener("click", async (e) => {
-    const item = e.target.closest(".subject-item");
-    if (!item) return;
-    const id = Number(item.dataset.id);
-    if (e.target.classList.contains("del")) {
-      try {
-        await api(`/subjects/${id}`, { method: "DELETE" });
-        await loadSubjects();
-        toast("Assunto excluído");
-      } catch (err) {
-        toast(err.message, true);
-      }
-    } else if (e.target.classList.contains("save")) {
-      const nome = item.querySelector(".edit-name").value.trim();
-      const keywords = item.querySelector(".edit-kw").value.split(",").map((s) => s.trim()).filter(Boolean);
-      if (!nome) return;
-      try {
-        await api(`/subjects/${id}`, { method: "PUT", body: JSON.stringify({ nome, keywords }) });
-        await loadSubjects();
-        toast("Assunto atualizado");
-      } catch (err) {
-        toast(err.message, true);
-      }
-    }
-  });
 
   $("#btn-upload").addEventListener("click", () => uploadFiles($("#file-input").files));
   $("#file-input").addEventListener("change", (e) => uploadFiles(e.target.files));
@@ -387,14 +321,22 @@
   });
 
   $("#btn-analyze").addEventListener("click", () => runAnalysis());
-  $("#btn-save").addEventListener("click", saveSelection);
+  $("#btn-back").addEventListener("click", () => {
+    currentDoc = null;
+    analysis = null;
+    setTab("documents");
+    loadDocuments();
+  });
   $("#btn-extract").addEventListener("click", extractPages);
+
+  $("#persons-list").addEventListener("change", (e) => {
+    if (e.target.classList.contains("page-check")) saveSelection();
+  });
 
   $$(".nav-btn").forEach((b) =>
     b.addEventListener("click", () => {
       setTab(b.dataset.view);
       if (b.dataset.view === "documents") loadDocuments();
-      if (b.dataset.view === "subjects") loadSubjects();
     })
   );
 

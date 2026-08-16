@@ -1,30 +1,32 @@
 # Organizador de PDFs
 
-Software web para gerenciar e organizar arquivos PDF. Você envia listas de
-presença em PDF, define **assuntos** com **palavras-chave** e o sistema identifica
-automaticamente quais páginas pertencem a cada assunto. Depois você confirma a
-seleção e **extrai as páginas relacionadas** em arquivos PDF separados.
+Software web para gerenciar e organizar arquivos PDF. Você envia **listas de
+presença** em que o nome de cada pessoa aparece **à esquerda do campo APOC** e o
+sistema separa, para cada pessoa, as páginas em que ela assinou — na ordem de
+**data e horário** das sessões.
 
 ## Funcionalidades
 
 - Upload de múltiplos PDFs (máx. 50 MB cada)
-- Extração automática do texto de cada página (PDFs digitais)
-- Assuntos com palavras-chave (sem sensibilidade a maiúsculas/acentos)
-- Correspondência página × assunto com pontuação de confiança
-- Revisão manual da seleção página por página
-- Extração das páginas confirmadas em um PDF por assunto + ZIP com todos
+- Detecção automática de assinaturas **APOC** (nome à esquerda do campo)
+- Páginas com o campo APOC em **branco não são contabilizadas**
+- Cada pessoa recebe um PDF com as páginas em que assinou, ordenadas por
+  **data e hora de início** da sessão
+- Revisão manual: desmarque páginas que não deseja incluir
+- Extração em PDF por pessoa + ZIP com todos
 - Contas de usuário com autenticação JWT (arquivos isolados por usuário)
 
-## Como funciona a correspondência
+## Como funciona a detecção
 
-1. Cada página tem seu texto extraído (biblioteca PyMuPDF).
-2. O texto é normalizado: minúsculas, sem acentos e espaços colapsados.
-3. Para cada assunto, cada palavra-chave é procurada no texto da página.
-4. A **pontuação** da página = soma das ocorrências (peso = nº de palavras da
-   palavra-chave). Se todas as palavras-chave do assunto aparecerem, ganha um
-   bônus. Palavras-chave compostas, ex. `prova de português`, funcionam.
-5. A página com melhor pontuação é sugerida automaticamente; o usuário revisa e
-   confirma antes de extrair.
+1. Cada página é lida com a biblioteca PyMuPDF (texto extraível).
+2. Palavras `APOC` na **região inferior da página** são tratadas como campos de
+   assinatura (menções de APOC no corpo do texto são ignoradas).
+3. O nome é o texto escrito à esquerda do APOC **na mesma linha**. Se o campo
+   estiver em branco, a página é ignorada.
+4. A **data e o horário** da sessão vêm do cabeçalho da página de conteúdo
+   anterior (campos `Data:` e `Início:`).
+5. As páginas de cada pessoa são agrupadas e ordenadas por `(data, início)`,
+   mesmo que no PDF original as sessões não estejam em ordem cronológica.
 
 ## Executar localmente (Windows)
 
@@ -129,14 +131,13 @@ app/
   main.py             # app FastAPI
   config.py           # configurações via .env
   database.py         # SQLAlchemy (SQLite)
-  models.py           # User, Subject, Keyword, Document, PageMatch
+  models.py           # User, Person, Document, PageMatch
   schemas.py          # validação Pydantic
   auth.py             # senha (bcrypt) + JWT
-  pdf_service.py      # extração de texto, pontuação, extração de páginas
+  pdf_service.py      # análise APOC, extração de páginas, ZIP
   routers/
     auth.py           # /auth/register, /auth/login, /auth/me
-    documents.py      # upload, listar, detalhe, excluir
-    subjects.py       # CRUD de assuntos e palavras-chave
+    documents.py      # upload, listar, excluir
     extract.py        # analyze, confirm, run, download
   static/             # interface (HTML/CSS/JS)
 data/                 # uploads, resultados e banco (volume Docker)
@@ -152,12 +153,9 @@ data/                 # uploads, resultados e banco (volume Docker)
 | POST | `/documents/upload` | Enviar PDF |
 | GET | `/documents` | Listar documentos |
 | DELETE | `/documents/{id}` | Excluir documento |
-| POST | `/subjects` | Criar assunto com palavras-chave |
-| PUT | `/subjects/{id}` | Atualizar assunto |
-| DELETE | `/subjects/{id}` | Excluir assunto |
-| POST | `/extract/analyze/{id}` | Analisar páginas do documento |
+| POST | `/extract/analyze/{id}` | Detectar assinaturas APOC e agrupar por pessoa |
 | POST | `/extract/confirm/{id}` | Salvar seleção manual |
-| POST | `/extract/run/{id}` | Gerar PDFs por assunto + ZIP |
+| POST | `/extract/run/{id}` | Gerar PDF por pessoa + ZIP |
 | GET | `/extract/download/{arquivo}` | Baixar arquivo gerado |
 
 A documentação interativa fica em `/docs`.

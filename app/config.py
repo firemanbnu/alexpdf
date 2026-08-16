@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 720
     data_dir: str = "data"
     max_upload_mb: int = 50
-    min_keyword_score: int = 1
 
     @property
     def uploads_dir(self) -> Path:

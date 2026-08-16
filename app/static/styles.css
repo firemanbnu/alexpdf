@@ -214,6 +214,39 @@ select.page-subject {
 .score-list { display: flex; flex-direction: column; gap: 3px; font-size: 0.8rem; color: var(--muted); }
 .score-list strong { color: var(--text); }
 
+/* ---------- Persons ---------- */
+.person {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+.person summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.person summary::-webkit-details-marker { display: none; }
+.person summary::before {
+  content: "▸";
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.person[open] summary::before { transform: rotate(90deg); }
+.person-name { font-weight: 700; }
+.person-meta {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.person .table.pages { border-top: 1px solid var(--border); }
+.person .table.pages td, .person .table.pages th { padding: 8px 16px; }
+
 /* ---------- Results ---------- */
 #results-box { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 14px; }
 #results-list { margin: 0; padding-left: 20px; }

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -15,7 +15,7 @@ class User(Base):
     senha_hash: Mapped[str] = mapped_column(String(255))
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    subjects: Mapped[list["Subject"]] = relationship(
+    persons: Mapped[list["Person"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
     )
     documents: Mapped[list["Document"]] = relationship(
@@ -23,28 +23,20 @@ class User(Base):
     )
 
 
-class Subject(Base):
-    __tablename__ = "subjects"
+class Person(Base):
+    """Pessoa (assinante APOC) identificada em um ou mais documentos."""
+
+    __tablename__ = "persons"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    nome: Mapped[str] = mapped_column(String(200))
+    nome: Mapped[str] = mapped_column(String(255))
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    owner: Mapped["User"] = relationship(back_populates="subjects")
-    keywords: Mapped[list["Keyword"]] = relationship(
-        back_populates="subject", cascade="all, delete-orphan"
+    owner: Mapped["User"] = relationship(back_populates="persons")
+    matches: Mapped[list["PageMatch"]] = relationship(
+        back_populates="person", cascade="all, delete-orphan"
     )
-
-
-class Keyword(Base):
-    __tablename__ = "keywords"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"), index=True)
-    palavra: Mapped[str] = mapped_column(String(255))
-
-    subject: Mapped["Subject"] = relationship(back_populates="keywords")
 
 
 class Document(Base):
@@ -68,11 +60,11 @@ class PageMatch(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), index=True)
-    subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"), index=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("persons.id"), index=True)
     num_pagina: Mapped[int] = mapped_column(Integer)
-    score: Mapped[float] = mapped_column(Float, default=0.0)
+    data_sessao: Mapped[str] = mapped_column(String(20), nullable=True)
+    hora_inicio: Mapped[str] = mapped_column(String(10), nullable=True)
     confirmada: Mapped[bool] = mapped_column(Boolean, default=False)
-    texto_exemplo: Mapped[str] = mapped_column(Text, default="")
 
     document: Mapped["Document"] = relationship(back_populates="matches")
-    subject: Mapped["Subject"] = relationship()
+    person: Mapped["Person"] = relationship(back_populates="matches")

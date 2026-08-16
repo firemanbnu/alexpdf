@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR, settings
 from .database import init_db
-from .routers import auth, documents, extract, subjects
+from .routers import auth, documents, extract
 
 settings.ensure_dirs()
 init_db()
@@ -21,7 +21,6 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(documents.router)
-app.include_router(subjects.router)
 app.include_router(extract.router)
 
 app.mount("/", StaticFiles(directory=str(BASE_DIR / "app" / "static"), html=True), name="static")

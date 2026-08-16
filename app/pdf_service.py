@@ -6,10 +6,16 @@ from pathlib import Path
 import fitz
 
 from .config import settings
-from .models import Document, Subject
+from .models import Document
 
 # ------------------------------------------------------------------ normalização
 _STRIP_RE = re.compile(r"[\s\-—_.,;:()\[\]/|]+")
+
+DATA_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
+HORA_RE = re.compile(r"^\d{1,2}:\d{2}$")
+
+# Assinaturas APOC ficam na parte inferior da página (campos fixos do formulário).
+_REGIAO_ASSINATURA = 180.0
 
 
 def normalizar(texto: str) -> str:
@@ -43,55 +49,78 @@ def validar_pdf(path: Path) -> bool:
         return False
 
 
-# ------------------------------------------------------------------ correspondência
-def _keyword_tokens(palavra: str) -> list[str]:
-    return [t for t in normalizar(palavra).split() if t]
+# ------------------------------------------------------------------ análise por APOC
+def _agrupar_linhas(words: list, tol: float = 4.0) -> list[dict]:
+    """Agrupa palavras que compartilham a mesma linha visual (por y central)."""
+    linhas: list[dict] = []
+    for w in sorted(words, key=lambda w: (w[1], w[0])):
+        yc = (w[1] + w[3]) / 2.0
+        for linha in linhas:
+            if abs(linha["yc"] - yc) <= tol:
+                linha["words"].append(w)
+                break
+        else:
+            linhas.append({"yc": yc, "words": [w]})
+    for linha in linhas:
+        linha["words"].sort(key=lambda w: w[0])
+    return linhas
 
 
-def calcular_score(texto_pagina: str, keywords: list[str]) -> float:
-    texto = normalizar(texto_pagina)
-    score = 0.0
-    encontradas = 0
-    for kw in keywords:
-        tokens = _keyword_tokens(kw)
-        if not tokens:
-            continue
-        frase = " ".join(tokens)
-        ocorrencias = texto.count(frase)
-        if ocorrencias > 0:
-            score += float(ocorrencias) * len(tokens)
-            encontradas += 1
-    if keywords and encontradas == len([k for k in keywords if _keyword_tokens(k)]):
-        score += 2.0
-    return score
+def extrair_data_hora(words: list, limiar_y: float = 200.0) -> tuple[str | None, str | None]:
+    """Data e hora de início a partir do cabeçalho da página de conteúdo."""
+    cabecalho = [w for w in words if w[1] < limiar_y]
+    datas = [w[4] for w in cabecalho if DATA_RE.match(w[4])]
+    horas = sorted([w for w in cabecalho if HORA_RE.match(w[4])], key=lambda w: w[0])
+    data = datas[0] if datas else None
+    inicio = horas[0][4] if horas else None
+    return data, inicio
 
 
-def analisar_paginas(doc: Document, subjects: list[Subject]) -> list[dict]:
-    """Retorna análise por página: lista de {subject_id, score} e texto preview."""
-    paginas = extrair_texto_paginas(Path(doc.caminho_arquivo))
-    resultado = []
-    for num, texto in enumerate(paginas, start=1):
-        matches = []
-        for subj in subjects:
-            keywords = [k.palavra for k in subj.keywords]
-            if not keywords:
-                continue
-            score = calcular_score(texto, keywords)
-            if score >= settings.min_keyword_score:
-                matches.append(
-                    {"subject_id": subj.id, "num_pagina": num, "score": score}
-                )
-        matches.sort(key=lambda m: m["score"], reverse=True)
-        preview = " ".join(texto.split())[:500]
-        resultado.append(
-            {
-                "num_pagina": num,
-                "texto_preview": preview,
-                "matches": matches,
-                "melhor_subject_id": matches[0]["subject_id"] if matches else None,
-            }
-        )
-    return resultado
+def analisar_apoc(pdf_path: Path) -> list[dict]:
+    """Varre o PDF e retorna, por página, as assinaturas APOC com o nome
+    escrito à esquerda e a data/hora de início da sessão (da página de
+    conteúdo mais próxima anterior). Páginas sem nome não geram assinatura."""
+    doc = fitz.open(pdf_path)
+    try:
+        paginas_info = []
+        for num, page in enumerate(doc, start=1):
+            words = page.get_text("words")
+            data, inicio = extrair_data_hora(words)
+            limiar_y = page.rect.height - _REGIAO_ASSINATURA
+
+            assinaturas: list[str] = []
+            for linha in _agrupar_linhas(words):
+                apocs = [
+                    w
+                    for w in linha["words"]
+                    if w[4].strip().upper() == "APOC" and w[1] >= limiar_y
+                ]
+                for apoc in apocs:
+                    nome_parts = [w[4] for w in linha["words"] if w[2] <= apoc[0]]
+                    nome = " ".join(nome_parts).strip(" ;,.-")
+                    if nome:
+                        assinaturas.append(nome)
+            paginas_info.append(
+                {"num": num, "data": data, "inicio": inicio, "assinaturas": assinaturas}
+            )
+
+        # A página de participantes vem logo após a de conteúdo; usa-se a
+        # data/hora mais recente encontrada para trás.
+        ultima = (None, None)
+        for p in paginas_info:
+            if p["data"] and p["inicio"]:
+                ultima = (p["data"], p["inicio"])
+            elif p["data"]:
+                ultima = (p["data"], ultima[1])
+            p["sessao_data"] = ultima[0]
+            p["sessao_inicio"] = ultima[1]
+        return paginas_info
+    finally:
+        doc.close()
+
+
+def _separar_nomes(nome: str) -> list[str]:
+    return [n.strip() for n in nome.split(";") if n.strip()]
 
 
 # ------------------------------------------------------------------ extração de PDF

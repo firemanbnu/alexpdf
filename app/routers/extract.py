@@ -8,15 +8,16 @@ from sqlalchemy.orm import Session
 from ..auth import obter_usuario_atual
 from ..config import settings
 from ..database import get_db
-from ..models import Document, PageMatch, Subject, User
+from ..models import Document, PageMatch, Person, User
 from ..pdf_service import (
-    analisar_paginas,
+    _separar_nomes,
+    analisar_apoc,
     cleanup_resultados,
     criar_zip,
     extrair_paginas,
     slugify,
 )
-from ..schemas import AnalyzeResult, ConfirmRequest, ExtractResult, PageAnalysis, PageMatchOut
+from ..schemas import AnalyzeResult, ConfirmRequest, ExtractResult, PaginaInfo, PessoaResult
 
 router = APIRouter(prefix="/extract", tags=["extract"])
 
@@ -28,34 +29,59 @@ def _get_doc(doc_id: int, user: User, db: Session) -> Document:
     return doc
 
 
-def _get_subjects(user: User, db: Session) -> list[Subject]:
-    return db.query(Subject).filter(Subject.user_id == user.id).all()
+def _get_persons(user: User, db: Session) -> dict[str, Person]:
+    return {
+        p.nome.lower(): p
+        for p in db.query(Person).filter(Person.user_id == user.id).all()
+    }
 
 
-def _build_analyze_result(doc: Document, db: Session) -> AnalyzeResult:
+def _build_result(doc: Document, db: Session) -> AnalyzeResult:
     rows = db.query(PageMatch).filter(PageMatch.document_id == doc.id).all()
-    paginas = []
-    for num in range(1, doc.num_paginas + 1):
-        page_rows = [r for r in rows if r.num_pagina == num]
-        matches = [
-            PageMatchOut(
-                subject_id=r.subject_id,
+    pessoas: dict[int, list[PageMatch]] = {}
+    for r in rows:
+        pessoas.setdefault(r.person_id, []).append(r)
+
+    resultado: list[PessoaResult] = []
+    for person_id, ms in pessoas.items():
+        person = db.get(Person, person_id)
+        if not person:
+            continue
+        paginas = [
+            PaginaInfo(
                 num_pagina=r.num_pagina,
-                score=r.score,
+                data_sessao=r.data_sessao,
+                hora_inicio=r.hora_inicio,
                 confirmada=r.confirmada,
             )
-            for r in sorted(page_rows, key=lambda r: r.score, reverse=True)
+            for r in ms
         ]
-        texto = page_rows[0].texto_exemplo if page_rows else ""
-        paginas.append(
-            PageAnalysis(
-                num_pagina=num,
-                texto_preview=texto,
-                matches=matches,
-                melhor_subject_id=matches[0].subject_id if matches else None,
+        paginas.sort(
+            key=lambda p: (
+                _chave(p.data_sessao, p.hora_inicio),
+                p.num_pagina,
             )
         )
-    return AnalyzeResult(document_id=doc.id, paginas=paginas)
+        resultado.append(PessoaResult(person_id=person.id, nome=person.nome, paginas=paginas))
+
+    resultado.sort(key=lambda r: r.nome.lower())
+    return AnalyzeResult(document_id=doc.id, pessoas=resultado)
+
+
+def _chave(data: str | None, hora: str | None) -> tuple[int, int, int, int, int]:
+    ano = mes = dia = h = min_ = 0
+    if data:
+        try:
+            d, m, a = (int(x) for x in data.split("/"))
+            ano, mes, dia = a, m, d
+        except ValueError:
+            pass
+    if hora:
+        try:
+            h, min_ = (int(x) for x in hora.split(":"))
+        except ValueError:
+            pass
+    return (ano, mes, dia, h, min_)
 
 
 @router.post("/analyze/{doc_id}", response_model=AnalyzeResult)
@@ -63,34 +89,38 @@ def analyze(
     doc_id: int, user: User = Depends(obter_usuario_atual), db: Session = Depends(get_db)
 ):
     doc = _get_doc(doc_id, user, db)
-    subjects = _get_subjects(user, db)
-    if not subjects:
-        raise HTTPException(
-            status_code=400,
-            detail="Crie ao menos um assunto com palavras-chave antes de analisar",
-        )
-
-    analise = analisar_paginas(doc, subjects)
+    infos = analisar_apoc(Path(doc.caminho_arquivo))
 
     db.query(PageMatch).filter(PageMatch.document_id == doc.id).delete()
     db.flush()
 
-    for item in analise:
-        for m in item["matches"]:
-            is_best = item["melhor_subject_id"] == m["subject_id"]
-            db.add(
-                PageMatch(
-                    document_id=doc.id,
-                    subject_id=m["subject_id"],
-                    num_pagina=m["num_pagina"],
-                    score=m["score"],
-                    confirmada=is_best,
-                    texto_exemplo=item["texto_preview"][:300],
+    persons = _get_persons(user, db)
+    vistos: set[tuple[int, int]] = set()
+    for info in infos:
+        for nome in info["assinaturas"]:
+            for parte in _separar_nomes(nome):
+                chave = parte.lower()
+                person = persons.get(chave)
+                if person is None:
+                    person = Person(user_id=user.id, nome=parte)
+                    db.add(person)
+                    db.flush()
+                    persons[chave] = person
+                if (person.id, info["num"]) in vistos:
+                    continue
+                vistos.add((person.id, info["num"]))
+                db.add(
+                    PageMatch(
+                        document_id=doc.id,
+                        person_id=person.id,
+                        num_pagina=info["num"],
+                        data_sessao=info["sessao_data"],
+                        hora_inicio=info["sessao_inicio"],
+                        confirmada=True,
+                    )
                 )
-            )
     db.commit()
-
-    return _build_analyze_result(doc, db)
+    return _build_result(doc, db)
 
 
 @router.post("/confirm/{doc_id}", response_model=AnalyzeResult)
@@ -101,33 +131,31 @@ def confirm(
     db: Session = Depends(get_db),
 ):
     doc = _get_doc(doc_id, user, db)
-    subj_ids = {s.id for s in _get_subjects(user, db)}
-
-    desejadas = {(i.subject_id, i.num_pagina) for i in dados.items if i.confirmada}
+    persons = _get_persons(user, db)
+    person_ids = {p.id for p in persons.values()}
     for item in dados.items:
-        if item.subject_id not in subj_ids:
-            raise HTTPException(status_code=400, detail="Assunto inválido")
+        if item.person_id not in person_ids:
+            raise HTTPException(status_code=400, detail="Pessoa inválida")
+
+    desejadas = {(i.person_id, i.num_pagina) for i in dados.items if i.confirmada}
 
     rows = db.query(PageMatch).filter(PageMatch.document_id == doc.id).all()
-    rows_por_chave = {(r.subject_id, r.num_pagina): r for r in rows}
-
+    rows_por_chave = {(r.person_id, r.num_pagina): r for r in rows}
     for chave, row in rows_por_chave.items():
         row.confirmada = chave in desejadas
 
-    for subject_id, num_pagina in desejadas:
-        if (subject_id, num_pagina) not in rows_por_chave:
+    for person_id, num_pagina in desejadas:
+        if (person_id, num_pagina) not in rows_por_chave:
             db.add(
                 PageMatch(
                     document_id=doc.id,
-                    subject_id=subject_id,
+                    person_id=person_id,
                     num_pagina=num_pagina,
-                    score=0.0,
                     confirmada=True,
                 )
             )
     db.commit()
-
-    return _build_analyze_result(doc, db)
+    return _build_result(doc, db)
 
 
 @router.post("/run/{doc_id}", response_model=ExtractResult)
@@ -147,21 +175,33 @@ def run(
 
     cleanup_resultados(doc)
 
-    por_assunto: dict[int, list[int]] = {}
+    por_pessoa: dict[int, list[PageMatch]] = {}
     for r in rows:
-        por_assunto.setdefault(r.subject_id, []).append(r.num_pagina)
+        por_pessoa.setdefault(r.person_id, []).append(r)
 
     arquivos: list[Path] = []
-    for subject_id, paginas in por_assunto.items():
-        subj = db.get(Subject, subject_id)
-        if not subj or subj.user_id != user.id:
+    nomes_usados: set[str] = set()
+    for person_id, ms in por_pessoa.items():
+        person = db.get(Person, person_id)
+        if not person or person.user_id != user.id:
             continue
-        destino = settings.results_dir / f"doc{doc.id}_{slugify(subj.nome)}.pdf"
+        ms.sort(key=lambda r: (_chave(r.data_sessao, r.hora_inicio), r.num_pagina))
+        paginas = [r.num_pagina for r in ms]
+
+        base = slugify(person.nome) or "pessoa"
+        nome = base
+        n = 2
+        while nome in nomes_usados:
+            nome = f"{base}_{n}"
+            n += 1
+        nomes_usados.add(nome)
+
+        destino = settings.results_dir / f"doc{doc.id}_{nome}.pdf"
         extrair_paginas(Path(doc.caminho_arquivo), paginas, destino)
         arquivos.append(destino)
 
     if not arquivos:
-        raise HTTPException(status_code=400, detail="Nenhum assunto válido confirmado")
+        raise HTTPException(status_code=400, detail="Nenhuma pessoa confirmada")
 
     zip_path = criar_zip(arquivos, settings.results_dir / f"doc{doc.id}_todas.zip")
     arquivos.append(zip_path)

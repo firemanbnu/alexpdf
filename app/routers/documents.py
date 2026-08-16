@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 from ..auth import obter_usuario_atual
 from ..config import settings
 from ..database import get_db
-from ..models import Document, PageMatch, User
-from ..pdf_service import extrair_texto_paginas, validar_pdf
-from ..schemas import DocumentDetail, DocumentOut
+from ..models import Document, User
+from ..pdf_service import cleanup_resultados, extrair_texto_paginas, validar_pdf
+from ..schemas import DocumentOut
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -64,26 +64,6 @@ def listar(user: User = Depends(obter_usuario_atual), db: Session = Depends(get_
     )
 
 
-@router.get("/{doc_id}", response_model=DocumentDetail)
-def detalhe(
-    doc_id: int,
-    user: User = Depends(obter_usuario_atual),
-    db: Session = Depends(get_db),
-):
-    doc = db.get(Document, doc_id)
-    if not doc or doc.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
-    matches = db.query(PageMatch).filter(PageMatch.document_id == doc.id).all()
-    return DocumentDetail(
-        id=doc.id,
-        nome_original=doc.nome_original,
-        num_paginas=doc.num_paginas,
-        criado_em=doc.criado_em,
-        paginas_texto=extrair_texto_paginas(Path(doc.caminho_arquivo)),
-        matches=matches,
-    )
-
-
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
 def excluir(
     doc_id: int,
@@ -95,5 +75,6 @@ def excluir(
         raise HTTPException(status_code=404, detail="Documento não encontrado")
     path = Path(doc.caminho_arquivo)
     path.unlink(missing_ok=True)
+    cleanup_resultados(doc)
     db.delete(doc)
     db.commit()
