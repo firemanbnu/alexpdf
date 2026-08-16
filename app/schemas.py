@@ -15,6 +15,11 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class LoginRequest(BaseModel):
+    email: EmailStr
+    senha: str = Field(min_length=1, max_length=128)
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

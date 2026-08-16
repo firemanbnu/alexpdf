@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..auth import criar_token, hash_senha, obter_usuario_atual, verificar_senha
 from ..database import get_db
 from ..models import User
-from ..schemas import TokenResponse, UserCreate, UserOut
+from ..schemas import LoginRequest, TokenResponse, UserCreate, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -28,6 +28,18 @@ def login(
 ):
     user = db.query(User).filter(User.email == form.username.lower()).first()
     if not user or not verificar_senha(form.password, user.senha_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="E-mail ou senha incorretos",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return TokenResponse(access_token=criar_token(user.id))
+
+
+@router.post("/login-json", response_model=TokenResponse)
+def login_json(dados: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == dados.email.lower()).first()
+    if not user or not verificar_senha(dados.senha, user.senha_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="E-mail ou senha incorretos",

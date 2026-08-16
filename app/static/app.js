@@ -14,7 +14,7 @@
   async function api(path, opts = {}) {
     const headers = { ...(opts.headers || {}) };
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    if (opts.body && !(opts.body instanceof FormData)) {
+    if (opts.body && !(opts.body instanceof FormData) && !(opts.body instanceof URLSearchParams)) {
       headers["Content-Type"] = "application/json";
     }
     const res = await fetch(path, { ...opts, headers });
