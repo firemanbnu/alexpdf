@@ -174,7 +174,15 @@ def run(
 
     cleanup_resultados(doc)
 
-    paginas_unicas = sorted({r.num_pagina for r in rows})
+    paginas_por_num: dict[int, tuple[str | None, str | None]] = {}
+    for r in rows:
+        if r.num_pagina not in paginas_por_num:
+            paginas_por_num[r.num_pagina] = (r.data_sessao, r.hora_inicio)
+
+    paginas_unicas = sorted(
+        paginas_por_num.keys(),
+        key=lambda p: (_chave(*paginas_por_num[p]), p),
+    )
 
     nome_arquivo = f"doc{doc.id}_PTRBA_APOCs.pdf"
     compilado = criar_pdf_compilado(

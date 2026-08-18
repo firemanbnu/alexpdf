@@ -139,8 +139,8 @@ def extrair_paginas(pdf_path: Path, paginas: list[int], destino: Path) -> Path:
 def criar_pdf_compilado(
     pdf_path: Path, todas_paginas: list[int], destino: Path
 ) -> Path:
-    """Cria um único PDF com todas as páginas em ordem crescente."""
-    paginas_ordenadas = sorted({int(p) for p in todas_paginas if int(p) >= 1})
+    """Cria um único PDF com todas as páginas na ordem informada."""
+    paginas_ordenadas = [int(p) for p in todas_paginas if int(p) >= 1]
     with fitz.open(pdf_path) as doc:
         total = doc.page_count
         paginas_validas = [p - 1 for p in paginas_ordenadas if p <= total]
