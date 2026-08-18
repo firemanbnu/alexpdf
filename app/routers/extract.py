@@ -176,7 +176,7 @@ def run(
 
     paginas_unicas = sorted({r.num_pagina for r in rows})
 
-    nome_arquivo = f"doc{doc.id}_compilacao_de_PTRBA_APOC.pdf"
+    nome_arquivo = f"doc{doc.id}_PTRBA_APOCs.pdf"
     compilado = criar_pdf_compilado(
         Path(doc.caminho_arquivo),
         paginas_unicas,
