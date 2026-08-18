@@ -69,3 +69,4 @@ class ConfirmRequest(BaseModel):
 class ExtractResult(BaseModel):
     arquivos: List[str]
     zip_url: str
+    compilado_url: str | None = None

@@ -13,8 +13,7 @@ from ..pdf_service import (
     _separar_nomes,
     analisar_apoc,
     cleanup_resultados,
-    criar_zip,
-    extrair_paginas,
+    criar_pdf_compilado,
     slugify,
 )
 from ..schemas import AnalyzeResult, ConfirmRequest, ExtractResult, PaginaInfo, PessoaResult
@@ -175,39 +174,18 @@ def run(
 
     cleanup_resultados(doc)
 
-    por_pessoa: dict[int, list[PageMatch]] = {}
-    for r in rows:
-        por_pessoa.setdefault(r.person_id, []).append(r)
+    paginas_unicas = sorted({r.num_pagina for r in rows})
 
-    arquivos: list[Path] = []
-    nomes_usados: set[str] = set()
-    for person_id, ms in por_pessoa.items():
-        person = db.get(Person, person_id)
-        if not person or person.user_id != user.id:
-            continue
-        ms.sort(key=lambda r: (_chave(r.data_sessao, r.hora_inicio), r.num_pagina))
-        paginas = [r.num_pagina for r in ms]
+    compilado = criar_pdf_compilado(
+        Path(doc.caminho_arquivo),
+        paginas_unicas,
+        settings.results_dir / f"doc{doc.id}_compilado.pdf",
+    )
 
-        base = slugify(person.nome) or "pessoa"
-        nome = base
-        n = 2
-        while nome in nomes_usados:
-            nome = f"{base}_{n}"
-            n += 1
-        nomes_usados.add(nome)
-
-        destino = settings.results_dir / f"doc{doc.id}_{nome}.pdf"
-        extrair_paginas(Path(doc.caminho_arquivo), paginas, destino)
-        arquivos.append(destino)
-
-    if not arquivos:
-        raise HTTPException(status_code=400, detail="Nenhuma pessoa confirmada")
-
-    zip_path = criar_zip(arquivos, settings.results_dir / f"doc{doc.id}_todas.zip")
-    arquivos.append(zip_path)
     return ExtractResult(
-        arquivos=[f.name for f in arquivos],
-        zip_url=f"/extract/download/{zip_path.name}",
+        arquivos=[compilado.name],
+        zip_url="",
+        compilado_url=f"/extract/download/{compilado.name}",
     )
 
 

@@ -281,14 +281,35 @@
     try {
       const res = await api(`/extract/run/${currentDoc.id}`, { method: "POST" });
       const box = $("#results-box");
-      $("#results-list").innerHTML = res.arquivos
-        .map(
-          (f) =>
-            `<li><a href="/extract/download/${encodeURIComponent(f)}" download>${esc(f)}</a>${f.endsWith(".zip") ? " (todos em ZIP)" : ""}</li>`
-        )
-        .join("");
+      let html = "";
+      const arquivo = (res.compilado_url || "").split("/").pop() || (res.arquivos && res.arquivos[0]) || "";
+      if (arquivo) {
+        html = `<li class="compilado-link"><a href="#" class="download-link" data-file="${esc(arquivo)}">${esc(arquivo)}</a></li>`;
+      }
+      $("#results-list").innerHTML = html;
       box.classList.remove("hidden");
-      toast("Arquivos gerados com sucesso");
+      toast("PDF gerado com sucesso");
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function downloadFile(filename) {
+    try {
+      const res = await fetch(`/extract/download/${encodeURIComponent(filename)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 401) { logout(); return; }
+      if (!res.ok) { toast("Erro ao baixar arquivo", true); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
       toast(err.message, true);
     }
@@ -328,6 +349,10 @@
     loadDocuments();
   });
   $("#btn-extract").addEventListener("click", extractPages);
+  $("#results-list").addEventListener("click", (e) => {
+    const link = e.target.closest(".download-link");
+    if (link) { e.preventDefault(); downloadFile(link.dataset.file); }
+  });
 
   $("#persons-list").addEventListener("change", (e) => {
     if (e.target.classList.contains("page-check")) saveSelection();

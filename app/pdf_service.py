@@ -136,6 +136,21 @@ def extrair_paginas(pdf_path: Path, paginas: list[int], destino: Path) -> Path:
     return destino
 
 
+def criar_pdf_compilado(
+    pdf_path: Path, todas_paginas: list[int], destino: Path
+) -> Path:
+    """Cria um único PDF com todas as páginas em ordem crescente."""
+    paginas_ordenadas = sorted({int(p) for p in todas_paginas if int(p) >= 1})
+    with fitz.open(pdf_path) as doc:
+        total = doc.page_count
+        paginas_validas = [p - 1 for p in paginas_ordenadas if p <= total]
+        if not paginas_validas:
+            raise ValueError("Nenhuma válida para compilar")
+        doc.select(paginas_validas)
+        doc.save(destino, garbage=4, deflate=True)
+    return destino
+
+
 def criar_zip(arquivos: list[Path], destino: Path) -> Path:
     with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as zf:
         for f in arquivos:
