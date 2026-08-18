@@ -164,22 +164,23 @@ def run(
     doc = _get_doc(doc_id, user, db)
     rows = (
         db.query(PageMatch)
-        .filter(PageMatch.document_id == doc.id, PageMatch.confirmada.is_(True))
+        .filter(PageMatch.document_id == doc.id)
         .all()
     )
     if not rows:
         raise HTTPException(
-            status_code=400, detail="Nenhuma página confirmada para extrair"
+            status_code=400, detail="Nenhuma página encontrada para extrair"
         )
 
     cleanup_resultados(doc)
 
     paginas_unicas = sorted({r.num_pagina for r in rows})
 
+    nome_arquivo = f"doc{doc.id}_compilacao_de_PTRBA_APOC.pdf"
     compilado = criar_pdf_compilado(
         Path(doc.caminho_arquivo),
         paginas_unicas,
-        settings.results_dir / f"doc{doc.id}_compilado.pdf",
+        settings.results_dir / nome_arquivo,
     )
 
     return ExtractResult(
@@ -196,9 +197,8 @@ def download(
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Nome de arquivo inválido")
     match = re.match(r"^doc(\d+)_", filename)
-    if not match:
-        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
-    doc = _get_doc(int(match.group(1)), user, db)
+    if match:
+        doc = _get_doc(int(match.group(1)), user, db)
     path = settings.results_dir / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Arquivo não encontrado")
