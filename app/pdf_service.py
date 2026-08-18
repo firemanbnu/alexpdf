@@ -96,7 +96,7 @@ def analisar_apoc(pdf_path: Path) -> list[dict]:
                     if w[4].strip().upper() == "APOC" and w[1] >= limiar_y
                 ]
                 for apoc in apocs:
-                    nome_parts = [w[4] for w in linha["words"] if w[2] <= apoc[0]]
+                    nome_parts = [w[4] for w in linha["words"] if w[0] >= apoc[2]]
                     nome = " ".join(nome_parts).strip(" ;,.-")
                     if nome:
                         assinaturas.append(nome)
