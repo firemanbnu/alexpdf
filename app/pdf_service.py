@@ -14,9 +14,6 @@ _STRIP_RE = re.compile(r"[\s\-—_.,;:()\[\]/|]+")
 DATA_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
 HORA_RE = re.compile(r"^\d{1,2}:\d{2}$")
 
-# Assinaturas APOC ficam na parte inferior da página (campos fixos do formulário).
-_REGIAO_ASSINATURA = 180.0
-
 
 def normalizar(texto: str) -> str:
     """Minúsculas, sem acentos e com espaçadores múltiplos colapsados."""
@@ -50,6 +47,13 @@ def validar_pdf(path: Path) -> bool:
 
 
 # ------------------------------------------------------------------ análise por APOC
+# Tokens que aparecem na linha do APOC mas não fazem parte do nome
+# (marcadores de situação e códigos de função da tabela).
+_RUIDO_LINHA_RE = re.compile(
+    r"^(?:P|A|EO|OC|INSTR\.?|INSTR\.?\s*[12]|[12])$", re.IGNORECASE
+)
+
+
 def _agrupar_linhas(words: list, tol: float = 4.0) -> list[dict]:
     """Agrupa palavras que compartilham a mesma linha visual (por y central)."""
     linhas: list[dict] = []
@@ -78,25 +82,29 @@ def extrair_data_hora(words: list, limiar_y: float = 200.0) -> tuple[str | None,
 
 def analisar_apoc(pdf_path: Path) -> list[dict]:
     """Varre o PDF e retorna, por página, as assinaturas APOC com o nome
-    escrito à esquerda e a data/hora de início da sessão (da página de
-    conteúdo mais próxima anterior). Páginas sem nome não geram assinatura."""
+    escrito à direita do campo (na mesma linha) e a data/hora de início da
+    sessão (da página de conteúdo mais próxima anterior). Linhas de APOC em
+    branco não geram assinatura."""
     doc = fitz.open(pdf_path)
     try:
         paginas_info = []
         for num, page in enumerate(doc, start=1):
             words = page.get_text("words")
             data, inicio = extrair_data_hora(words)
-            limiar_y = page.rect.height - _REGIAO_ASSINATURA
 
             assinaturas: list[str] = []
             for linha in _agrupar_linhas(words):
-                apocs = [
-                    w
-                    for w in linha["words"]
-                    if w[4].strip().upper() == "APOC" and w[1] >= limiar_y
-                ]
-                for apoc in apocs:
-                    nome_parts = [w[4] for w in linha["words"] if w[0] >= apoc[2]]
+                ordenadas = sorted(linha["words"], key=lambda w: w[0])
+                for i, apoc in enumerate(ordenadas):
+                    if apoc[4].strip().upper() != "APOC":
+                        continue
+                    nome_parts = []
+                    for w in ordenadas[i + 1 :]:
+                        if w[4].strip().upper() == "APOC":
+                            break
+                        if _RUIDO_LINHA_RE.match(w[4].strip()):
+                            continue
+                        nome_parts.append(w[4])
                     nome = " ".join(nome_parts).strip(" ;,.-")
                     if nome:
                         assinaturas.append(nome)

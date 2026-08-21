@@ -1,14 +1,14 @@
 # Organizador de PDFs
 
 Software web para gerenciar e organizar arquivos PDF. Você envia **listas de
-presença** em que o nome de cada pessoa aparece **à esquerda do campo APOC** e o
+presença** em que o nome de cada pessoa aparece **à direita do campo APOC** e o
 sistema separa, para cada pessoa, as páginas em que ela assinou — na ordem de
 **data e horário** das sessões.
 
 ## Funcionalidades
 
 - Upload de múltiplos PDFs (máx. 50 MB cada)
-- Detecção automática de assinaturas **APOC** (nome à esquerda do campo)
+- Detecção automática de assinaturas **APOC** (nome à direita do campo)
 - Páginas com o campo APOC em **branco não são contabilizadas**
 - Cada pessoa recebe um PDF com as páginas em que assinou, ordenadas por
   **data e hora de início** da sessão
@@ -19,9 +19,10 @@ sistema separa, para cada pessoa, as páginas em que ela assinou — na ordem de
 ## Como funciona a detecção
 
 1. Cada página é lida com a biblioteca PyMuPDF (texto extraível).
-2. Palavras `APOC` na **região inferior da página** são tratadas como campos de
-   assinatura (menções de APOC no corpo do texto são ignoradas).
-3. O nome é o texto escrito à esquerda do APOC **na mesma linha**. Se o campo
+2. Palavras `APOC` na tabela de participantes (campo à esquerda) são tratadas
+   como campos de assinatura; marcadores de situação (`P`, `A`, `EO`, `OC`) e
+   códigos de função (`INSTR. 1`, `INSTR. 2`) são descartados.
+3. O nome é o texto escrito à direita do APOC **na mesma linha**. Se o campo
    estiver em branco, a página é ignorada.
 4. A **data e o horário** da sessão vêm do cabeçalho da página de conteúdo
    anterior (campos `Data:` e `Início:`).

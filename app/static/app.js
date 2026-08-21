@@ -247,7 +247,7 @@
 
     if (!(analysis.pessoas || []).length) {
       empty.textContent =
-        "Nenhuma assinatura APOC com nome foi encontrada neste documento. Verifique se o arquivo tem o campo APOC com nome à esquerda.";
+        "Nenhuma assinatura APOC com nome foi encontrada neste documento. Verifique se o arquivo tem o campo APOC com nome à direita.";
       empty.classList.remove("hidden");
     }
   }
